@@ -4,4 +4,4 @@ Unmodified stock kernel source for Samsung m55xq based on One UI 8
 ## To compile:
 
 1. Clone the git repo
-2. in the source, execute the 
+2. in the source, execute: *sh build_kernel_GKI.sh*
