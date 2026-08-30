@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +24,49 @@ jobs:
           sudo apt update
           sudo apt install -y \
             bc bison build-essential ccache curl flex gcc git \
-            libelf-dev libssl-dev lld llvm clang \
+            libelf-dev libssl-dev zstd \
             python3 python3-pip rsync zip unzip \
             dwarves pahole device-tree-compiler \
             libncurses-dev busybox cpio
+
+      - name: Restore ccache from release
+        run: |
+          mkdir -p ~/.ccache
+          gh release download ccache-cache --repo "${{ github.repository }}" \
+            --pattern 'ccache.tar.zst' --output /tmp/ccache.tar.zst 2>/dev/null || true
+          if [ -f /tmp/ccache.tar.zst ]; then
+            tar --use-compress-program=zstd -xf /tmp/ccache.tar.zst -C ~/.ccache
+            echo "Restored ccache from release."
+          else
+            echo "No existing ccache release found — starting cold."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up ccache
+        run: |
+          ccache --set-config=compression=true
+          ccache -z
 
       - name: Build kernel
         run: |
           chmod +x build_m55xq.sh
           ./build_m55xq.sh
+
+      - name: ccache stats
+        if: always()
+        run: ccache -s
+
+      - name: Save ccache to release
+        if: always()
+        run: |
+          tar --use-compress-program='zstd -T0' -cf /tmp/ccache.tar.zst -C ~/.ccache .
+          gh release delete ccache-cache --repo "${{ github.repository }}" --yes 2>/dev/null || true
+          gh release create ccache-cache /tmp/ccache.tar.zst \
+            --repo "${{ github.repository }}" \
+            --title "ccache" \
+            --notes "Automated ccache storage — updated on every build." \
+            || gh release upload ccache-cache /tmp/ccache.tar.zst \
+               --repo "${{ github.repository }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
